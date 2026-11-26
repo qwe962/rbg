@@ -18,6 +18,8 @@ package v1alpha2
 
 import (
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // SetupWebhookWithManager sets up the conversion, validating and defaulting
@@ -29,15 +31,23 @@ func (r *RoleBasedGroup) SetupWebhookWithManager(
 	mgr ctrl.Manager,
 	enableDeprecatedWorkloadTypes bool,
 ) error {
-	return ctrl.NewWebhookManagedBy(mgr).
+	if err := ctrl.NewWebhookManagedBy(mgr).
 		For(r).
 		WithValidator(&RoleBasedGroupValidator{
 			Client:                        mgr.GetClient(),
 			APIReader:                     mgr.GetAPIReader(),
 			EnableDeprecatedWorkloadTypes: enableDeprecatedWorkloadTypes,
 		}).
-		WithDefaulter(&RoleBasedGroupDefaulter{}).
-		Complete()
+		Complete(); err != nil {
+		return err
+	}
+	mgr.GetWebhookServer().Register(roleBasedGroupMutatingPath, &webhook.Admission{
+		Handler: &roleBasedGroupDefaultingHandler{
+			decoder:   admission.NewDecoder(mgr.GetScheme()),
+			defaulter: &RoleBasedGroupDefaulter{},
+		},
+	})
+	return nil
 }
 
 // SetupWebhookWithManager sets up the validating webhook for CoordinatedPolicy

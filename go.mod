@@ -18,6 +18,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2
 	golang.org/x/text v0.41.0
 	golang.org/x/time v0.11.0
+	gomodules.xyz/jsonpatch/v2 v2.4.0
 	k8s.io/api v0.34.2
 	k8s.io/apiextensions-apiserver v0.34.2
 	k8s.io/apimachinery v0.34.2
@@ -109,7 +110,6 @@ require (
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
 	golang.org/x/tools/go/packages/packagestest v0.1.1-deprecated // indirect
-	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.83.2 // indirect

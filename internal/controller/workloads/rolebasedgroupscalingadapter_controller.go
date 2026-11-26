@@ -18,13 +18,14 @@ package workloads
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	metaapplyv1 "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -498,31 +498,28 @@ func (r *RoleBasedGroupScalingAdapterReconciler) GetTargetRbgFromAdapter(
 	return rbg, nil
 }
 
+// updateRoleReplicas writes only the target role's replicas. A full Update would send
+// every role back through the typed struct, which turns an inline template stored
+// without a spec into "spec: {containers: null}" and fails validation on a role that
+// is not being scaled (#627). The test operation rejects the patch if the role moved to
+// another index since rbg was read; the next reconcile then reads it again.
 func (r *RoleBasedGroupScalingAdapterReconciler) updateRoleReplicas(
 	ctx context.Context, rbg *workloadsv1alpha2.RoleBasedGroup, targetRoleName string, newReplicas *int32,
 ) error {
-	return retry.RetryOnConflict(
-		retry.DefaultBackoff, func() error {
-			for index, role := range rbg.Spec.Roles {
-				if role.Name == targetRoleName {
-					role.Replicas = newReplicas
-					rbg.Spec.Roles[index] = role
-					break
-				}
-			}
-			if err := r.client.Update(ctx, rbg); err != nil {
-				if apierrors.IsConflict(err) {
-					if err := r.client.Get(
-						ctx, types.NamespacedName{Name: rbg.Name, Namespace: rbg.Namespace}, rbg,
-					); err != nil {
-						return err
-					}
-				}
-				return err
-			}
-			return nil
-		},
-	)
+	index := slices.IndexFunc(rbg.Spec.Roles, func(role workloadsv1alpha2.RoleSpec) bool {
+		return role.Name == targetRoleName
+	})
+	if index < 0 {
+		return fmt.Errorf("role %q not found in RoleBasedGroup %s", targetRoleName, klog.KObj(rbg))
+	}
+	patch, err := json.Marshal([]map[string]any{
+		{"op": "test", "path": fmt.Sprintf("/spec/roles/%d/name", index), "value": targetRoleName},
+		{"op": "add", "path": fmt.Sprintf("/spec/roles/%d/replicas", index), "value": newReplicas},
+	})
+	if err != nil {
+		return err
+	}
+	return r.client.Patch(ctx, rbg, client.RawPatch(types.JSONPatchType, patch))
 }
 
 // extractLabelSelectorDefault extracts a LabelSelector string from the given role's scale subresource.
